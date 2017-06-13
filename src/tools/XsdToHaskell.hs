@@ -7,29 +7,33 @@ module Main where
 -- definitions, you should import Xsd2Haskell wherever you intend
 -- to read and write XML files with your Haskell programs.
 
-import System.Environment
-import System.Exit
-import System.IO
-import Control.Monad
+import           Control.Monad
+import qualified Data.Map                               as Map
+import           Data.Maybe
+import           Data.Monoid
+import           System.Environment
+import           System.Exit
+import           System.FilePath
+import           System.IO
 --import Data.Either
 
 --import Text.XML.HaXml.Wrappers   (fix2Args)
-import Text.XML.HaXml            (version)
-import Text.XML.HaXml.Types
-import Text.XML.HaXml.Namespaces (resolveAllNames,qualify
-                                 ,nullNamespace)
-import Text.XML.HaXml.Parse      (xmlParse')
-import Text.XML.HaXml.Util       (docContent)
-import Text.XML.HaXml.Posn       (posInNewCxt)
+import           Text.XML.HaXml                         (version)
+import           Text.XML.HaXml.Namespaces              (nullNamespace, qualify,
+                                                         resolveAllNames)
+import           Text.XML.HaXml.Parse                   (xmlParse')
+import           Text.XML.HaXml.Posn                    (posInNewCxt)
+import           Text.XML.HaXml.Types
+import           Text.XML.HaXml.Util                    (docContent)
 
-import Text.XML.HaXml.Schema.Parse
-import Text.XML.HaXml.Schema.Environment
-import Text.XML.HaXml.Schema.NameConversion
-import Text.XML.HaXml.Schema.TypeConversion
-import Text.XML.HaXml.Schema.PrettyHaskell
+import           Text.ParserCombinators.Poly
+import           Text.PrettyPrint.HughesPJ              (render, vcat)
+import           Text.XML.HaXml.Schema.Environment
 import qualified Text.XML.HaXml.Schema.HaskellTypeModel as Haskell
-import Text.ParserCombinators.Poly
-import Text.PrettyPrint.HughesPJ (render,vcat)
+import           Text.XML.HaXml.Schema.NameConversion
+import           Text.XML.HaXml.Schema.Parse
+import           Text.XML.HaXml.Schema.PrettyHaskell
+import           Text.XML.HaXml.Schema.TypeConversion
 
 -- sucked in from Text.XML.HaXml.Wrappers to avoid dependency on T.X.H.Html
 fix2Args :: IO (String,String)
@@ -52,33 +56,77 @@ fix2Args = do
 
 main ::IO ()
 main =
-  fix2Args >>= \(inf,outf)->
-  ( if inf=="-" then getContents
-    else readFile inf )           >>= \thiscontent->
-  ( if outf=="-" then return stdout
-    else openFile outf WriteMode ) >>= \o->
-  let d@Document{} = resolveAllNames qualify
-                     . either (error . ("not XML:\n"++)) id
-                     . xmlParse' inf
-                     $ thiscontent
-  in do
-    case runParser schema [docContent (posInNewCxt inf Nothing) d] of
-        (Left msg,_) ->    hPutStrLn stderr msg
-        (Right v,[]) -> do hPutStrLn stdout $ "Parse Success!"
-                           hPutStrLn stdout $ "\n-----------------\n"
-                           hPutStrLn stdout $ show v
-                           hPutStrLn stdout $ "\n-----------------\n"
-                           let decls = convert (mkEnvironment inf v emptyEnv) v
-                               haskl = Haskell.mkModule inf v decls
-                               doc   = ppModule simpleNameConverter haskl
-                           hPutStrLn o $ render doc
-        (Right v,_)  -> do hPutStrLn stdout $ "Parse incomplete!"
-                           hPutStrLn stdout $ "\n-----------------\n"
-                           hPutStrLn stdout $ show v
-                           hPutStrLn stdout $ "\n-----------------\n"
-    hFlush o
+  fix2Args >>= \(inf, outf) ->
+    (if inf == "-"
+       then getContents
+       else readFile inf) >>= \thiscontent ->
+      (if outf == "-"
+         then return stdout
+         else openFile outf WriteMode) >>= \o ->
+        let d@Document {} =
+              resolveAllNames qualify .
+              either (error . ("not XML:\n" ++)) id . xmlParse' inf $
+              thiscontent
+        in do case runParser schema [docContent (posInNewCxt inf Nothing) d] of
+                (Left msg, _) -> hPutStrLn stderr msg
+                (Right v, []) -> do
+                  hPutStrLn stdout "Parse Success!"
+                  hPutStrLn stdout "\n-----------------\n"
+                  hPutStrLn stdout $ show v
+                  hPutStrLn stdout "\n-----------------\n"
+                  let imports = gatherImports v
+                  putStrLn "Going into imports:"
+                  importsEnv <-
+                    forM imports $ \(i, mname) -> do
+                      print (i, mname)
+                      let baseDir = takeDirectory inf
+                          fp = baseDir </> i
+                      putStrLn $ "Parsing " <> fp
+                      d <-
+                        resolveAllNames qualify .
+                        either (error "failed to parse import") id .
+                        xmlParse' fp <$>
+                        readFile fp
+                      let (Right r, []) =
+                            runParser
+                              schema
+                              [docContent (posInNewCxt fp Nothing) d]
+                          env = (mkEnvironment fp r emptyEnv)
+                          (uri, nsName) = (head (Map.toList (env_namespace env)))
+                          ns = Namespace (case (fromMaybe nsName mname) of
+                                              "xs" -> "xml"
+                                              v    -> v) uri
+                      print ("Namespace: ", ns)
+                      let env' =
+                            env
+                            { env_attribute =
+                                Map.fromList
+                                  (map
+                                     (\(N n, v) -> (QN ns n, v))
+                                     (Map.toList (env_attribute env)))
+                            }
+                    -- print env'
+                      return env'
+                  let decls =
+                        convert
+                          (mkEnvironment
+                             inf
+                             v
+                             (foldl combineEnv emptyEnv importsEnv))
+                          v
+                  print decls
+                  putStrLn "-------"
+                  let haskl = Haskell.mkModule inf v decls
+                      doc = ppModule simpleNameConverter haskl
+                  hPutStrLn o $ render doc
+                (Right v, _) -> do
+                  hPutStrLn stdout "Parse incomplete!"
+                  hPutStrLn stdout "\n-----------------\n"
+                  hPutStrLn stdout $ show v
+                  hPutStrLn stdout "\n-----------------\n"
+              hFlush o
 
-  
+
 --do hPutStrLn o $ "Document contains XSD for target namespace "++
 --                 targetNamespace e
   {-
@@ -116,7 +164,7 @@ targetNamespace :: Element i -> String
 targetNamespace (Elem qn attrs _) =
     if qn /= xsdSchema then "ERROR! top element not an xsd:schema tag"
     else case lookup (N "targetNamespace") attrs of
-           Nothing -> "ERROR! no targetNamespace specified"
+           Nothing  -> "ERROR! no targetNamespace specified"
            Just atv -> show atv
 
 xsdSchema :: QName

@@ -133,7 +133,7 @@ Executable XsdToHaskell
   Hs-Source-Dirs: src/tools
   cpp-options: -DVERSION="\"1.25.3\""
   Main-Is: XsdToHaskell.hs
-  build-depends: base, HaXml, pretty, polyparse, directory
+  build-depends: base, HaXml, pretty, polyparse, directory, filepath, containers
 
 Executable FpMLToHaskell
   GHC-Options: -Wall

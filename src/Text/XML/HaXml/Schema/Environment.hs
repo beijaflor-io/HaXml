@@ -3,14 +3,16 @@ module Text.XML.HaXml.Schema.Environment
   ( module Text.XML.HaXml.Schema.Environment
   ) where
 
-import Text.XML.HaXml.Types (QName(..),Name(..),Namespace(..))
-import Text.XML.HaXml.Schema.XSDTypeModel
-import Text.XML.HaXml.Schema.NameConversion (wordsBy)
-import Text.XML.HaXml.Schema.Parse (targetPrefix)
+import           Text.XML.HaXml.Schema.NameConversion (wordsBy)
+import           Text.XML.HaXml.Schema.Parse          (targetPrefix)
+import           Text.XML.HaXml.Schema.XSDTypeModel
+import           Text.XML.HaXml.Types                 (Name (..),
+                                                       Namespace (..),
+                                                       QName (..))
 
-import qualified Data.Map as Map
-import Data.Map (Map)
-import Data.List (foldl')
+import           Data.List                            (foldl')
+import           Data.Map                             (Map)
+import qualified Data.Map                             as Map
 
 -- Some things we probably want to do.
 -- * Build Maps from :
@@ -42,20 +44,21 @@ import Data.List (foldl')
 -- Likewise, the mappings from supertype->subtype (env_extendty) and for
 -- substitution groups (env_substGrp) also need to be global.
 
-data Environment =  Environment
-    { env_type      :: Map QName (Either SimpleType ComplexType)
+data Environment = Environment
+  { env_type      :: Map QName (Either SimpleType ComplexType)
                                  -- ^ type definitions in scope
-    , env_allTypes  :: Map QName (Either SimpleType ComplexType)
+  , env_allTypes  :: Map QName (Either SimpleType ComplexType)
                                  -- ^ all type definitions, regardless of scope
-    , env_element   :: Map QName ElementDecl
-    , env_attribute :: Map QName AttributeDecl
-    , env_group     :: Map QName Group
-    , env_attrgroup :: Map QName AttrGroup
-    , env_namespace :: Map String{-URI-} String{-Prefix-}
-    , env_extendty  :: Map QName [(QName,FilePath)] -- ^ supertype -> subtypes
-    , env_substGrp  :: Map QName [(QName,FilePath)] -- ^ substitution groups
-    , env_typeloc   :: Map QName FilePath           -- ^ where type is defined
-    }
+  , env_element   :: Map QName ElementDecl
+  , env_attribute :: Map QName AttributeDecl
+  , env_group     :: Map QName Group
+  , env_attrgroup :: Map QName AttrGroup
+  , env_namespace :: Map String String {-URI-}
+     {-Prefix-}
+  , env_extendty  :: Map QName [(QName, FilePath)] -- ^ supertype -> subtypes
+  , env_substGrp  :: Map QName [(QName, FilePath)] -- ^ substitution groups
+  , env_typeloc   :: Map QName FilePath -- ^ where type is defined
+  } deriving (Show)
 
 -- | An empty environment of XSD type mappings.
 emptyEnv :: Environment
